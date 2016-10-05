@@ -2,11 +2,11 @@ import sys, getopt, re
 
 datafile = None
 
-label = "generatetable"
+table_label = "generatetable"
 
 path_prefix = None
 
-template = """\\begin{{table}}[H]
+table_template = """\\begin{{table}}[H]
 \centering
 \caption{{{caption}}}
 \\begin{{tabular}}{{llll}}
@@ -21,70 +21,92 @@ template = """\\begin{{table}}[H]
 colors = ["CBCEFB", "FFCE93", "C3ECEB", "ECC3E7"]
 i = 0
 
-
-def process_args(argv):
-   global datafile, path_prefix
-   if len(argv) != 1:
-      print "usage: python table_generate.py [LaTeX file name]"
-      exit()
-   datafile = open(argv[0], 'r+')
-   path_prefix = "/".join(argv[0].split("/")[0:-1]) + "/"
-
 def get_color():
    global i
-   i = (i + 1) % len(colors)
    return colors[i]
 
-def generate_line(raw_line):
+def get_new_color():
+   global i
+   i = (i + 1) % len(colors)
+   return get_color()
+
+def generate_line(raw_line, standard_length):
    color = get_color()
+   print color
 
    columns = raw_line.split("\t")
 
    if len(columns) == 1:
       # caption
       return columns[0]
-   else:
-      return "\\cellcolor[HTML]{" + color + "}" + (" & \\cellcolor[HTML]{" + color + "}").join(columns)
+   elif len(columns) > standard_length:
+      color = get_new_color()
+   
+   return "\\cellcolor[HTML]{" + color + "} " + (" & \\cellcolor[HTML]{" + color + "} ").join(columns)
+
+def generate_header(raw_line):
+   columns = raw_line.split("\t")
+   return " & ".join(columns)
 
 def generate_table(filename):
-   input_file = open(path_prefix + filename, 'r')
+   input_file = open(filename, 'r')
 
-   lines = [generate_line(line) for line in input_file.read().split("\n")]
+   input_lines = input_file.read().split("\n")
 
-   caption = lines[0]
+   standard_length = min(len(line.split("\t")) for line in input_lines[1:])
 
-   header = lines[1]
+   print standard_length
 
-   data = lines[2:]
+   caption = input_lines[0]
+
+   header = input_lines[1]
+
+
+
+   data = [generate_line(line, standard_length) for line in input_lines[2:]]
 
    data_string = "".join([line + "\\\\ \n" for line in data])
 
    subs = {'caption': caption, "header": header, "data": data_string}
 
-   return template.format(**subs)
+   return table_template.format(**subs)
+
+def replace_line_with_table(path_prefix, line):
+   first_quote_indices = [pos for pos, char in enumerate(line) if char == '\"']
+
+   input_filename = line[first_quote_indices[0]+1:first_quote_indices[1]]
+
+   print "Generating table from " + `input_filename` + "..."
+
+   table = generate_table(path_prefix + input_filename)
+
+   print "Done"
+
+   return table
 
 def main(argv):
-   global datafile, label
+   # make sure it was called correctly
+   if len(argv) != 1:
+      print "usage: python table_generate.py [LaTeX file name]"
+      exit()
 
-   process_args(argv)
+   # read the input file
+   datafile = open(argv[0], 'r+')
+   path_prefix = "/".join(argv[0].split("/")[0:-1]) + "/"
 
    file_contents = datafile.read()
 
    input_filename = None
-   label_line = None
 
-   for line in file_contents.split("\n"):
-      if label in line:
-         label_line = line
+   lines = file_contents.split("\n")
 
-   first_quote_indices = [pos for pos, char in enumerate(label_line) if char == '\"']
+   for i in range(len(lines)):
+      line = lines[i]
+      if table_label in line:
+         lines[i] = replace_line_with_table(path_prefix, line)
+         get_new_color()
 
-   input_filename = label_line[first_quote_indices[0]+1:first_quote_indices[1]]
-
-   table = generate_table(input_filename)
-
-   file_contents = file_contents.replace(label_line, table)
-
+   file_contents = "\n".join(lines)
    print file_contents
 
    datafile.seek(0)
